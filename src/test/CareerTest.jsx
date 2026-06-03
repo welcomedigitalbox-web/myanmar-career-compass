@@ -30,22 +30,21 @@ const MQ = [
 ]
 
 const ALL_Q = [...RQ, ...MQ]
-const RIASEC_PAIRS = ['RI','RE','IS','AE','SE','EC','SC','AC']
+const PAIRS = ['RI','RE','IS','AE','SE','EC','SC','AC']
 
 function getMatchKey(scores) {
-  return RIASEC_PAIRS.map(k => ({ k, v: scores[k[0]] + scores[k[1]] }))
-    .sort((a, b) => b.v - a.v)[0].k
+  return PAIRS.map(k => ({ k, v: scores[k[0]] + scores[k[1]] })).sort((a,b) => b.v - a.v)[0].k
 }
 
-function getDBEntry(careerData, scores) {
-  const key = getMatchKey(scores)
-  return careerData.find(d => d.key === key) || careerData[0] || null
-}
+const inp = { width:'100%', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px', color:'var(--text)', fontSize:14, outline:'none', fontFamily:'inherit' }
 
 export default function CareerTest() {
   const [careerData, setCareerData] = useState([])
   const [dbLoading, setDbLoading] = useState(true)
-  const [cur, setCur] = useState(-1)
+  const [stage, setStage] = useState('contact') // contact | intro | questions | done
+  const [contact, setContact] = useState({ name:'', email:'', facebook:'' })
+  const [contactErr, setContactErr] = useState('')
+  const [cur, setCur] = useState(0)
   const [ans, setAns] = useState({})
   const [abroad, setAbroad] = useState('yes')
   const [result, setResult] = useState(null)
@@ -61,78 +60,106 @@ export default function CareerTest() {
   }, [])
 
   const scores = { R:0, I:0, A:0, S:0, E:0, C:0 }
-  RQ.forEach((q, i) => { if (ans[i] !== undefined) scores[q.t] += [3,2,1,0][ans[i]] })
+  RQ.forEach((q,i) => { if(ans[i] !== undefined) scores[q.t] += [3,2,1,0][ans[i]] })
 
-  const pick = (qi, oi) => setAns(a => ({ ...a, [qi]: oi }))
+  const submitContact = () => {
+    if (!contact.name.trim()) { setContactErr('နာမည် ထည့်ပါ'); return }
+    if (!contact.email.trim()) { setContactErr('Email ထည့်ပါ'); return }
+    setContactErr('')
+    setStage('intro')
+  }
 
   const finish = async () => {
     setSaving(true)
     const matchKey = getMatchKey(scores)
-    const entry = getDBEntry(careerData, scores)
-    const countryKey = ['japan','sea','aus','eu'][ans[RQ.length + 5] ?? 1]
-    const topCareer = (entry?.careers?.[0]?.t) || '—'
+    const entry = careerData.find(d => d.key === matchKey) || careerData[0]
+    const countryKey = ['japan','sea','aus','eu'][ans[RQ.length+5] ?? 1]
+    const topCareer = entry?.careers?.[0]?.t || '—'
     try {
       await addDoc(collection(db, 'responses'), {
+        name: contact.name.trim(),
+        email: contact.email.trim(),
+        facebook: contact.facebook.trim(),
         riasecType: entry?.type || matchKey,
         topCareer,
         abroad,
         scores: { ...scores },
-        mmAnswers: Object.fromEntries(MQ.map((q, i) => [q.k, ans[RQ.length + i] ?? 0])),
+        mmAnswers: Object.fromEntries(MQ.map((q,i) => [q.k, ans[RQ.length+i] ?? 0])),
         createdAt: Date.now(),
+        matchKey,
+        entryId: entry?._id || '',
       })
     } catch(e) { console.error(e) }
-    setResult({ entry, scores, countryKey, abroad })
+    setResult({ entry, scores, countryKey, abroad, contact })
     setSaving(false)
   }
 
-  if (result) return <Result result={result} onRetry={() => { setResult(null); setCur(-1); setAns({}); setAbroad('yes') }} />
+  if (result) return <Result result={result} onRetry={() => { setResult(null); setStage('contact'); setContact({name:'',email:'',facebook:''}); setCur(0); setAns({}); setAbroad('yes') }} />
 
-  const q = ALL_Q[cur]
-  const isRiasec = cur < RQ.length
-  const opts = isRiasec ? ['အရမ်းနှစ်သက်','နှစ်သက်','သာမန်','မနှစ်သက်'] : q?.o
-  const total = ALL_Q.length
-  const pct = cur >= 0 ? Math.round(((cur + 1) / total) * 100) : 0
+  // Contact form
+  if (stage === 'contact') return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:'1.5rem' }}>
+      <div style={{ maxWidth:440, width:'100%' }}>
+        <div style={{ textAlign:'center', marginBottom:'2rem' }}>
+          <div style={{ fontSize:40, marginBottom:12 }}>🧭</div>
+          <h1 style={{ fontSize:22, fontWeight:600, marginBottom:8 }}>Myanmar Career Compass</h1>
+          <p style={{ fontSize:14, color:'var(--muted)' }}>စတင်မည်မှ ကျွန်ုပ်တို့ မင်းရဲ့ contact ကို ရယူမည်</p>
+        </div>
+        <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'1.75rem' }}>
+          <div style={{ marginBottom:'1rem' }}>
+            <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>နာမည် *</label>
+            <input style={inp} placeholder="မင်းရဲ့ နာမည်" value={contact.name} onChange={e => setContact(c => ({...c, name:e.target.value}))} onKeyDown={e => e.key==='Enter' && submitContact()} />
+          </div>
+          <div style={{ marginBottom:'1rem' }}>
+            <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Email *</label>
+            <input style={inp} type="email" placeholder="example@gmail.com" value={contact.email} onChange={e => setContact(c => ({...c, email:e.target.value}))} onKeyDown={e => e.key==='Enter' && submitContact()} />
+          </div>
+          <div style={{ marginBottom:'1.25rem' }}>
+            <label style={{ fontSize:12, color:'var(--muted)', display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:'.05em' }}>Facebook Link <span style={{ color:'var(--muted)', fontWeight:400 }}>(optional)</span></label>
+            <input style={inp} placeholder="https://facebook.com/yourname" value={contact.facebook} onChange={e => setContact(c => ({...c, facebook:e.target.value}))} onKeyDown={e => e.key==='Enter' && submitContact()} />
+          </div>
+          {contactErr && <p style={{ color:'var(--danger)', fontSize:12, marginBottom:10 }}>{contactErr}</p>}
+          <button onClick={submitContact} style={{ width:'100%', background:'var(--accent)', color:'#fff', border:'none', borderRadius:10, padding:13, fontSize:15, fontWeight:500, cursor:'pointer' }}>
+            ဆက်သွားမည် →
+          </button>
+          <p style={{ fontSize:11, color:'var(--muted)', textAlign:'center', marginTop:10 }}>* မဖြစ်မနေ ဖြည့်ရမည်</p>
+        </div>
+      </div>
+    </div>
+  )
 
-  const btnStyle = (active) => ({
-    width:'100%', textAlign:'left', padding:'12px 14px', marginBottom:8,
-    background: active ? '#EEEDFE' : 'transparent',
-    border: active ? '1.5px solid #7F77DD' : '1px solid var(--border)',
-    borderRadius:10, color: active ? '#3C3489' : 'var(--text)',
-    fontSize:14, cursor:'pointer', transition:'all .15s', lineHeight:1.5,
-  })
-
-  if (cur === -1) return (
+  // Intro
+  if (stage === 'intro') return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:'1.5rem' }}>
       <div style={{ maxWidth:480, width:'100%' }}>
         <div style={{ textAlign:'center', marginBottom:'2rem' }}>
-          <div style={{ fontSize:40, marginBottom:12 }}>🧭</div>
-          <h1 style={{ fontSize:24, fontWeight:600, marginBottom:8 }}>Myanmar Career Compass</h1>
-          <p style={{ fontSize:14, color:'var(--muted)', lineHeight:1.7 }}>RIASEC + မြန်မာ Context ပေါင်းစပ်ထားသော Career Test<br/>မေးခွန်း {total} ခု — မိနစ် ၅ ခန့်</p>
+          <div style={{ fontSize:32, marginBottom:8 }}>👋</div>
+          <h2 style={{ fontSize:20, fontWeight:600, marginBottom:6 }}>မင်္ဂလာပါ {contact.name}!</h2>
+          <p style={{ fontSize:14, color:'var(--muted)', lineHeight:1.7 }}>RIASEC + မြန်မာ Context ပေါင်းစပ်ထားသော Career Test<br/>မေးခွန်း {ALL_Q.length} ခု — မိနစ် ၅ ခန့်</p>
         </div>
-
-        {dbLoading ? (
-          <p style={{ textAlign:'center', color:'var(--muted)', fontSize:13 }}>Career data loading...</p>
-        ) : careerData.length === 0 ? (
-          <div style={{ background:'rgba(255,92,92,.1)', border:'1px solid var(--danger)', borderRadius:10, padding:'1rem', fontSize:13, color:'var(--danger)', textAlign:'center', marginBottom:'1.5rem' }}>
-            Admin Panel မှ Career data ထည့်ပါ
-          </div>
-        ) : null}
-
+        {dbLoading ? <p style={{ textAlign:'center', color:'var(--muted)', fontSize:13 }}>Career data loading...</p> :
+         careerData.length === 0 ? <div style={{ background:'rgba(255,92,92,.1)', border:'1px solid var(--danger)', borderRadius:10, padding:'1rem', fontSize:13, color:'var(--danger)', textAlign:'center', marginBottom:'1.5rem' }}>Admin Panel မှ Career data ထည့်ပါ</div> : null}
         <div style={{ marginBottom:'1.5rem' }}>
           <p style={{ fontSize:13, color:'var(--muted)', marginBottom:10 }}>နိုင်ငံရပ်ခြားပညာရေး ဦးစားပေးမှု</p>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
             {[['yes','သွားချင်သည်'],['maybe','ဆိုင်မဆိုင် ကြည့်မည်'],['no','မြန်မာပြည်တွင်ပဲ']].map(([v,l]) => (
-              <button key={v} onClick={() => setAbroad(v)} style={{ padding:'7px 14px', borderRadius:99, border: abroad===v ? '1.5px solid var(--accent)' : '1px solid var(--border)', background: abroad===v ? 'rgba(124,107,255,.1)' : 'transparent', color: abroad===v ? 'var(--accent)' : 'var(--muted)', fontSize:13, cursor:'pointer' }}>{l}</button>
+              <button key={v} onClick={() => setAbroad(v)} style={{ padding:'7px 14px', borderRadius:99, border: abroad===v?'1.5px solid var(--accent)':'1px solid var(--border)', background: abroad===v?'rgba(124,107,255,.1)':'transparent', color: abroad===v?'var(--accent)':'var(--muted)', fontSize:13, cursor:'pointer' }}>{l}</button>
             ))}
           </div>
         </div>
-
-        <button onClick={() => setCur(0)} disabled={careerData.length === 0} style={{ width:'100%', background:'var(--accent)', color:'#fff', border:'none', borderRadius:10, padding:14, fontSize:15, fontWeight:500, cursor:'pointer', opacity: careerData.length===0 ? .5 : 1 }}>
+        <button onClick={() => setStage('questions')} disabled={careerData.length===0} style={{ width:'100%', background:'var(--accent)', color:'#fff', border:'none', borderRadius:10, padding:14, fontSize:15, fontWeight:500, cursor:'pointer', opacity:careerData.length===0?.5:1 }}>
           စတင်မည် →
         </button>
       </div>
     </div>
   )
+
+  // Questions
+  const q = ALL_Q[cur]
+  const isRiasec = cur < RQ.length
+  const opts = isRiasec ? ['အရမ်းနှစ်သက်','နှစ်သက်','သာမန်','မနှစ်သက်'] : q?.o
+  const total = ALL_Q.length
+  const pct = Math.round(((cur+1)/total)*100)
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:'1.5rem' }}>
@@ -140,28 +167,20 @@ export default function CareerTest() {
         <div style={{ background:'var(--border)', borderRadius:99, height:5, marginBottom:'1.5rem', overflow:'hidden' }}>
           <div style={{ width:`${pct}%`, height:'100%', background:'var(--accent)', borderRadius:99, transition:'width .4s' }} />
         </div>
-
-        <div style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'4px 12px', borderRadius:99, marginBottom:'1rem', background: isRiasec ? 'rgba(124,107,255,.12)' : 'rgba(0,212,160,.1)', color: isRiasec ? '#a89bff' : 'var(--accent2)' }}>
-          {isRiasec ? '🧠 Phase 1 — RIASEC' : '🇲🇲 Phase 2 — မြန်မာ Context'}
+        <div style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, padding:'4px 12px', borderRadius:99, marginBottom:'1rem', background:isRiasec?'rgba(124,107,255,.12)':'rgba(0,212,160,.1)', color:isRiasec?'#a89bff':'var(--accent2)' }}>
+          {isRiasec?'🧠 Phase 1 — RIASEC':'🇲🇲 Phase 2 — မြန်မာ Context'}
         </div>
-
         <p style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>မေးခွန်း {cur+1} / {total}</p>
         <p style={{ fontSize:17, fontWeight:500, marginBottom:'1.5rem', lineHeight:1.6 }}>{q.q}</p>
-
         <div>
-          {opts.map((o, i) => (
-            <button key={i} onClick={() => pick(cur, i)} style={btnStyle(ans[cur] === i)}>{o}</button>
+          {opts.map((o,i) => (
+            <button key={i} onClick={() => setAns(a => ({...a,[cur]:i}))} style={{ width:'100%', textAlign:'left', padding:'12px 14px', marginBottom:8, background:ans[cur]===i?'#EEEDFE':'transparent', border:ans[cur]===i?'1.5px solid #7F77DD':'1px solid var(--border)', borderRadius:10, color:ans[cur]===i?'#3C3489':'var(--text)', fontSize:14, cursor:'pointer', lineHeight:1.5 }}>{o}</button>
           ))}
         </div>
-
         <div style={{ display:'flex', justifyContent:'space-between', marginTop:'1.25rem' }}>
-          <button onClick={() => setCur(c => c-1)} disabled={cur === 0} style={{ padding:'8px 18px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--text)', fontSize:13, cursor:'pointer', opacity: cur===0 ? .4 : 1 }}>← နောက်</button>
-          <button
-            onClick={cur === total-1 ? finish : () => setCur(c => c+1)}
-            disabled={ans[cur] === undefined || saving}
-            style={{ padding:'8px 18px', borderRadius:8, border:'none', background:'var(--accent)', color:'#fff', fontSize:13, fontWeight:500, cursor:'pointer', opacity: ans[cur]===undefined ? .4 : 1 }}
-          >
-            {saving ? 'Saving...' : cur === total-1 ? 'ရလဒ်ကြည့်မည် ✓' : 'ရှေ့ →'}
+          <button onClick={() => setCur(c => c-1)} disabled={cur===0} style={{ padding:'8px 18px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', color:'var(--text)', fontSize:13, cursor:'pointer', opacity:cur===0?.4:1 }}>← နောက်</button>
+          <button onClick={cur===total-1?finish:()=>setCur(c=>c+1)} disabled={ans[cur]===undefined||saving} style={{ padding:'8px 18px', borderRadius:8, border:'none', background:'var(--accent)', color:'#fff', fontSize:13, fontWeight:500, cursor:'pointer', opacity:ans[cur]===undefined?.4:1 }}>
+            {saving?'Saving...' : cur===total-1?'ရလဒ်ကြည့်မည် ✓':'ရှေ့ →'}
           </button>
         </div>
       </div>
